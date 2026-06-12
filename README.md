@@ -50,6 +50,31 @@ OAuth client 需允許 service account / client credentials flow。建議 scope 
 server-level read scope，例如 `system/Observation.read`，實際值需依 FHIR server
 與 authorization server 設定調整。
 
+## Vercel 部署
+
+本專案是 npm workspace monorepo。部署到 Vercel 時建議使用 GitHub 匯入專案，並在
+Vercel Project Settings 設定：
+
+- Framework Preset: `Next.js`
+- Root Directory: `apps/web`
+- Install Command: `npm install`
+- Build Command: `npm run build`
+
+在 Vercel Environment Variables 設定：
+
+```text
+FHIR_BASE_URL=http://35.185.175.68:8080/fhir
+FHIR_TOKEN_URL=http://35.185.175.68:8060/realms/HAPI/protocol/openid-connect/token
+FHIR_CLIENT_ID=hapi-admin
+FHIR_CLIENT_SECRET=<production secret>
+FHIR_SCOPE=
+NEXTAUTH_SECRET=<production random secret>
+NEXTAUTH_URL=https://<your-vercel-domain>
+```
+
+`FHIR_CLIENT_SECRET` 與 `NEXTAUTH_SECRET` 必須只存在 Vercel 環境變數或本機
+`.env.local`，不要提交到 git。
+
 ## MVP 使用流程
 
 1. 使用者輸入 FHIR server、Patient id、Observation id。
