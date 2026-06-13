@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readServerConfig } from "../src/index";
+import { ServerConfigError, readServerConfig } from "../src/index";
 
 describe("readServerConfig", () => {
   it("reads backend service OAuth settings", () => {
@@ -15,5 +15,10 @@ describe("readServerConfig", () => {
     expect(config.clientId).toBe("client");
     expect(config.clientSecret).toBe("secret");
     expect(config.scope).toBe("");
+  });
+
+  it("throws a structured error when required FHIR settings are missing", () => {
+    expect(() => readServerConfig({})).toThrow(ServerConfigError);
+    expect(() => readServerConfig({})).toThrow("FHIR_BASE_URL is required");
   });
 });

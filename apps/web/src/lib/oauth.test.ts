@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestClientCredentialsToken } from "./oauth";
+import { TokenRequestError, requestClientCredentialsToken } from "./oauth";
 
 describe("OAuth helpers", () => {
   afterEach(() => {
@@ -61,5 +61,24 @@ describe("OAuth helpers", () => {
     });
 
     expect(body).not.toContain("scope=");
+  });
+
+  it("throws a structured error when the token endpoint rejects credentials", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "unauthorized_client" }, { status: 401 }))
+    );
+
+    await expect(
+      requestClientCredentialsToken({
+        clientId: "hapi-admin",
+        fhirBaseUrl: "https://fhir.example.test",
+        scope: "",
+        tokenUrl: "https://auth.example.test/token"
+      })
+    ).rejects.toMatchObject({
+      name: "TokenRequestError",
+      status: 401
+    } satisfies Partial<TokenRequestError>);
   });
 });

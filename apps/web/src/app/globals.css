@@ -39,7 +39,7 @@
     background:
       linear-gradient(hsl(var(--border)) 1px, transparent 1px),
       linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px);
-    background-size: 24px 24px;
+    background-size: 16px 16px;
   }
 
   .ecg-path {
@@ -47,7 +47,7 @@
     stroke: #c62828;
     stroke-linecap: round;
     stroke-linejoin: round;
-    stroke-width: 1.8;
+    stroke-width: 1.4;
   }
 
   .ecg-baseline {

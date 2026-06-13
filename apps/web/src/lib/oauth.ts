@@ -8,6 +8,16 @@ export interface TokenSet {
   readonly expiresAt: number;
 }
 
+export class TokenRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "TokenRequestError";
+  }
+}
+
 export async function requestClientCredentialsToken(config: ServerConfig): Promise<TokenSet> {
   const body = new URLSearchParams({
     grant_type: "client_credentials",
@@ -47,7 +57,7 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
   });
 
   if (!response.ok) {
-    throw new Error(`Token endpoint failed with status ${response.status}`);
+    throw new TokenRequestError(response.status, `Token endpoint failed with status ${response.status}`);
   }
 
   return parseTokenResponse((await response.json()) as unknown);

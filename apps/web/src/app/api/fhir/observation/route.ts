@@ -1,9 +1,15 @@
-import { readServerConfig } from "@ecgviewer/config";
+import { ServerConfigError, readServerConfig } from "@ecgviewer/config";
 import { FhirEcgParseError, parseFhirEcgObservation } from "@ecgviewer/fhir";
 import { getBackendServiceAccessToken } from "@/lib/fhir-auth";
+import { TokenRequestError } from "@/lib/oauth";
 import { NextRequest, NextResponse } from "next/server";
 
 const idPattern = /^[A-Za-z0-9\-._]{1,128}$/;
+
+interface ApiErrorBody {
+  readonly error: string;
+  readonly message: string;
+}
 
 interface PatientSummary {
   readonly id: string;
@@ -28,7 +34,7 @@ export async function GET(request: NextRequest) {
   const observationId = request.nextUrl.searchParams.get("observationId") ?? "";
 
   if (!idPattern.test(patientId) || !idPattern.test(observationId)) {
-    return NextResponse.json({ error: "Invalid Patient id or Observation id" }, { status: 400 });
+    return errorResponse("INVALID_REQUEST", "Patient id 或 Observation id 格式不正確。", 400);
   }
 
   try {
@@ -44,7 +50,11 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
-      return NextResponse.json({ error: "FHIR Observation request failed" }, { status: response.status });
+      return errorResponse(
+        "FHIR_OBSERVATION_REQUEST_FAILED",
+        `FHIR Observation 讀取失敗，FHIR server 回應狀態 ${response.status}。`,
+        response.status
+      );
     }
 
     const resource: unknown = await response.json();
@@ -67,11 +77,28 @@ export async function GET(request: NextRequest) {
       observation
     });
   } catch (error) {
-    if (error instanceof FhirEcgParseError) {
-      return NextResponse.json({ error: error.code }, { status: 422 });
+    if (error instanceof ServerConfigError) {
+      return errorResponse("SERVER_CONFIG_MISSING", `伺服器缺少必要設定：${error.variableName}。`, 503);
     }
-    return NextResponse.json({ error: "Unexpected server error" }, { status: 500 });
+    if (error instanceof TokenRequestError) {
+      return errorResponse(
+        "FHIR_TOKEN_REQUEST_FAILED",
+        `FHIR OAuth token 取得失敗，token endpoint 回應狀態 ${error.status}。`,
+        502
+      );
+    }
+    if (error instanceof FhirEcgParseError) {
+      return errorResponse(error.code, parseErrorMessage(error), 422);
+    }
+    if (error instanceof FhirUpstreamError) {
+      return errorResponse(error.code, error.message, error.status);
+    }
+    return errorResponse("UNEXPECTED_SERVER_ERROR", "伺服器處理 ECG Observation 時發生未預期錯誤。", 500);
   }
+}
+
+function errorResponse(error: string, message: string, status: number): NextResponse<ApiErrorBody> {
+  return NextResponse.json({ error, message }, { status });
 }
 
 async function fetchPatientSummary(
@@ -88,7 +115,11 @@ async function fetchPatientSummary(
   });
 
   if (!response.ok) {
-    throw new Error(`FHIR Patient request failed with status ${response.status}`);
+    throw new FhirUpstreamError(
+      "FHIR_PATIENT_REQUEST_FAILED",
+      `FHIR Patient 讀取失敗，FHIR server 回應狀態 ${response.status}。`,
+      response.status
+    );
   }
 
   return summarizePatient((await response.json()) as unknown, patientId);
@@ -170,4 +201,32 @@ function parseCodeLabel(value: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+class FhirUpstreamError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = "FhirUpstreamError";
+  }
+}
+
+function parseErrorMessage(error: FhirEcgParseError): string {
+  switch (error.code) {
+    case "PATIENT_MISMATCH":
+      return "Observation subject 與要求的 Patient id 不一致。";
+    case "OBSERVATION_MISMATCH":
+      return "FHIR server 回傳的 Observation id 與要求不一致。";
+    case "NO_ECG_COMPONENTS":
+      return "Observation 中沒有可支援的 ECG SampledData waveform。";
+    case "UNSUPPORTED_SAMPLED_DATA":
+      return "Observation 的 SampledData 格式目前不支援。";
+    case "NOT_OBSERVATION":
+      return "FHIR server 回傳的資源不是 Observation。";
+    case "NOT_OBJECT":
+      return "FHIR server 回傳的內容不是有效的 FHIR JSON 物件。";
+  }
 }

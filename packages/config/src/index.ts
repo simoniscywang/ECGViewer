@@ -6,6 +6,13 @@ export interface ServerConfig {
   readonly scope: string;
 }
 
+export class ServerConfigError extends Error {
+  constructor(readonly variableName: string) {
+    super(`${variableName} is required`);
+    this.name = "ServerConfigError";
+  }
+}
+
 export function readServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   return {
     fhirBaseUrl: required(env.FHIR_BASE_URL, "FHIR_BASE_URL"),
@@ -17,6 +24,6 @@ export function readServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
 }
 
 function required(value: string | undefined, name: string): string {
-  if (!value) throw new Error(`${name} is required`);
+  if (!value) throw new ServerConfigError(name);
   return value;
 }
