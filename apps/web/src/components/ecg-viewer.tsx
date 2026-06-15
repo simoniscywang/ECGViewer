@@ -186,7 +186,7 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
         onSelectedLeadNameChange={setSelectedReviewLeadName}
       />
 
-      <Card className="bg-card/95 shadow-sm shadow-cyan-900/5">
+      <Card className="border-blue-100 bg-card/95 shadow-sm shadow-slate-900/5">
         <CardHeader className="flex flex-col gap-2 p-2.5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm">
@@ -240,7 +240,7 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
 
 function PatientPanel({ patient }: { readonly patient: PatientSummary }) {
   return (
-    <Card className="bg-card/95 shadow-sm shadow-cyan-900/5">
+    <Card className="border-blue-100 bg-card/95 shadow-sm shadow-slate-900/5">
       <CardHeader className="p-2.5 pb-1">
         <CardTitle className="flex items-center gap-2 text-sm">
           <UserRound className="h-4 w-4 text-primary" />
@@ -273,7 +273,7 @@ function ObservationPanel({
   readonly observation: ObservationSummary;
 }) {
   return (
-    <Card className="bg-card/95 shadow-sm shadow-cyan-900/5">
+    <Card className="border-blue-100 bg-card/95 shadow-sm shadow-slate-900/5">
       <CardHeader className="p-2.5 pb-1">
         <CardTitle className="flex items-center gap-2 text-sm">
           <FileText className="h-4 w-4 text-primary" />
@@ -310,7 +310,7 @@ function MetricCard({
   readonly value: string;
 }) {
   return (
-    <Card className="bg-gradient-to-br from-white to-cyan-50/70 shadow-sm shadow-cyan-900/5">
+    <Card className="border-blue-100 bg-gradient-to-br from-white to-blue-50/60 shadow-sm shadow-slate-900/5">
       <CardContent className="p-2">
         <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {label}
@@ -401,7 +401,7 @@ function LeadWaveform({
   }, []);
 
   return (
-    <figure className="rounded-md border border-cyan-100 bg-white/90 p-2 shadow-sm shadow-cyan-900/5">
+    <figure className="rounded-md border border-blue-100 bg-white/95 p-2 shadow-sm shadow-slate-900/5">
       <figcaption className="mb-1 flex items-center justify-between gap-3">
         <span className="text-xs font-semibold">{name}</span>
         <span className="text-[11px] text-muted-foreground">
@@ -478,7 +478,7 @@ function LeadWaveform({
           {landmarks.map((landmark) => (
             <span
               key={`${landmark.kind}-${landmark.sampleIndex}-legend`}
-              className="rounded-md border border-cyan-100 bg-cyan-50 px-1.5 py-0.5"
+              className="rounded-md border border-blue-100 bg-blue-50/70 px-1.5 py-0.5"
             >
               <span className="font-semibold text-primary">
                 {landmarkCode(landmark.kind)}

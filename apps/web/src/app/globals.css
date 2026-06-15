@@ -4,21 +4,21 @@
 
 @layer base {
   :root {
-    --background: 205 38% 96%;
+    --background: 214 32% 96%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-    --primary: 211 86% 34%;
+    --primary: 214 76% 34%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 199 58% 91%;
+    --secondary: 214 48% 91%;
     --secondary-foreground: 222 47% 11%;
-    --muted: 205 32% 92%;
-    --muted-foreground: 215 18% 39%;
+    --muted: 214 26% 92%;
+    --muted-foreground: 215 18% 38%;
     --destructive: 0 72% 43%;
     --destructive-foreground: 0 0% 100%;
-    --border: 207 30% 82%;
-    --input: 207 42% 72%;
-    --ring: 198 89% 42%;
+    --border: 214 28% 89%;
+    --input: 214 30% 76%;
+    --ring: 214 68% 48%;
     --radius: 0.5rem;
   }
 
@@ -42,8 +42,8 @@
 @layer components {
   .ecg-grid {
     background:
-      linear-gradient(hsl(207 30% 86%) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(207 30% 86%) 1px, transparent 1px);
+      linear-gradient(hsl(214 24% 93%) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(214 24% 93%) 1px, transparent 1px);
     background-size: 16px 16px;
   }
 
