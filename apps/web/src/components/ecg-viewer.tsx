@@ -153,8 +153,8 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
   );
 
   return (
-    <div className="space-y-3">
-      <section className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+    <div className="space-y-2.5">
+      <section className="grid gap-2 lg:grid-cols-[0.9fr_1.1fr]">
         <PatientPanel patient={data.patient} />
         <ObservationPanel observation={data.observation} />
       </section>
@@ -186,8 +186,8 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
         onSelectedLeadNameChange={setSelectedReviewLeadName}
       />
 
-      <Card>
-        <CardHeader className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between">
+      <Card className="bg-card/95 shadow-sm shadow-cyan-900/5">
+        <CardHeader className="flex flex-col gap-2 p-2.5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm">
               <Activity className="h-4 w-4 text-primary" />
@@ -209,7 +209,7 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
             </Badge>
           </div>
         </CardHeader>
-        <CardContent className="p-3 pt-0">
+        <CardContent className="p-2.5 pt-0">
           <div className="space-y-2">
             {data.record.leads.map((lead) => (
               <LeadWaveform
@@ -240,17 +240,14 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
 
 function PatientPanel({ patient }: { readonly patient: PatientSummary }) {
   return (
-    <Card>
-      <CardHeader className="p-3 pb-2">
+    <Card className="bg-card/95 shadow-sm shadow-cyan-900/5">
+      <CardHeader className="p-2.5 pb-1">
         <CardTitle className="flex items-center gap-2 text-sm">
           <UserRound className="h-4 w-4 text-primary" />
           Patient
         </CardTitle>
-        <CardDescription className="text-xs">
-          Basic demographics from FHIR Patient.
-        </CardDescription>
       </CardHeader>
-      <CardContent className="p-3 pt-0">
+      <CardContent className="p-2.5 pt-0">
         <DefinitionList
           items={[
             ["Name", patient.name],
@@ -276,17 +273,14 @@ function ObservationPanel({
   readonly observation: ObservationSummary;
 }) {
   return (
-    <Card>
-      <CardHeader className="p-3 pb-2">
+    <Card className="bg-card/95 shadow-sm shadow-cyan-900/5">
+      <CardHeader className="p-2.5 pb-1">
         <CardTitle className="flex items-center gap-2 text-sm">
           <FileText className="h-4 w-4 text-primary" />
           Observation
         </CardTitle>
-        <CardDescription className="text-xs">
-          FHIR Observation metadata for this ECG record.
-        </CardDescription>
       </CardHeader>
-      <CardContent className="p-3 pt-0">
+      <CardContent className="p-2.5 pt-0">
         <DefinitionList
           items={[
             ["Observation id", observation.id],
@@ -316,12 +310,12 @@ function MetricCard({
   readonly value: string;
 }) {
   return (
-    <Card>
-      <CardContent className="p-2.5">
+    <Card className="bg-gradient-to-br from-white to-cyan-50/70 shadow-sm shadow-cyan-900/5">
+      <CardContent className="p-2">
         <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </div>
-        <div className="mt-1 break-words text-sm font-semibold">{value}</div>
+        <div className="mt-0.5 break-words text-sm font-semibold">{value}</div>
       </CardContent>
     </Card>
   );
@@ -333,11 +327,11 @@ function DefinitionList({
   readonly items: readonly (readonly [string, string])[];
 }) {
   return (
-    <dl className="space-y-1.5">
+    <dl className="space-y-1">
       {items.map(([label, value], index) => (
         <div key={label}>
-          {index > 0 ? <Separator className="mb-1.5" /> : null}
-          <div className="grid gap-1 sm:grid-cols-[112px_1fr]">
+          {index > 0 ? <Separator className="mb-1" /> : null}
+          <div className="grid gap-0.5 sm:grid-cols-[104px_1fr]">
             <dt className="text-xs font-medium text-muted-foreground">
               {label}
             </dt>
@@ -407,7 +401,7 @@ function LeadWaveform({
   }, []);
 
   return (
-    <figure className="rounded-md border bg-card p-2">
+    <figure className="rounded-md border border-cyan-100 bg-white/90 p-2 shadow-sm shadow-cyan-900/5">
       <figcaption className="mb-1 flex items-center justify-between gap-3">
         <span className="text-xs font-semibold">{name}</span>
         <span className="text-[11px] text-muted-foreground">
@@ -484,7 +478,7 @@ function LeadWaveform({
           {landmarks.map((landmark) => (
             <span
               key={`${landmark.kind}-${landmark.sampleIndex}-legend`}
-              className="rounded-md border bg-background/70 px-1.5 py-0.5"
+              className="rounded-md border border-cyan-100 bg-cyan-50 px-1.5 py-0.5"
             >
               <span className="font-semibold text-primary">
                 {landmarkCode(landmark.kind)}

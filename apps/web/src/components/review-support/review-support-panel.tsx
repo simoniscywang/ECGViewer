@@ -51,8 +51,8 @@ export function ReviewSupportPanel({
   );
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-2 p-3 pb-2 sm:flex-row sm:items-start sm:justify-between">
+    <Card className="bg-card/95 shadow-sm shadow-cyan-900/5">
+      <CardHeader className="flex flex-col gap-2 p-2.5 pb-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-sm">
             <ListChecks className="h-4 w-4 text-primary" />
@@ -70,7 +70,7 @@ export function ReviewSupportPanel({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="p-3 pt-0">
+      <CardContent className="p-2.5 pt-0">
         <div className="mb-2 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
             <label
@@ -80,7 +80,7 @@ export function ReviewSupportPanel({
               Analysis lead
             </label>
             <select
-              className="h-7 rounded-md border bg-card px-2 text-xs font-medium text-foreground shadow-sm"
+              className="h-7 rounded-md border border-cyan-300 bg-cyan-50 px-2 text-xs font-semibold text-cyan-950 shadow-sm shadow-cyan-900/5 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
               id="review-lead"
               onChange={(event) => onSelectedLeadNameChange(event.target.value)}
               value={selectedLeadName}
@@ -154,14 +154,14 @@ function ReviewCardCustomizer({
   };
 
   return (
-    <details className="rounded-md border bg-background/60 p-2">
+    <details className="rounded-md border border-cyan-200 bg-cyan-50/70 p-2">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold">
         <span className="flex items-center gap-1.5">
           <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
           Customize cards
         </span>
         <button
-          className="rounded-md border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+          className="rounded-md border border-cyan-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-cyan-800 shadow-sm transition hover:border-cyan-500 hover:bg-cyan-100 focus:outline-none focus:ring-2 focus:ring-cyan-200"
           onClick={(event) => {
             event.preventDefault();
             onSelectedCardIdsChange(defaultReviewSupportCardIds);
@@ -173,7 +173,10 @@ function ReviewCardCustomizer({
       </summary>
       <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {reviewSupportCardGroups.map((group) => (
-          <fieldset key={group.title} className="rounded-md border bg-card p-2">
+          <fieldset
+            key={group.title}
+            className="rounded-md border border-cyan-100 bg-white p-2"
+          >
             <legend className="px-1 text-[11px] font-semibold text-muted-foreground">
               {group.title}
             </legend>
@@ -189,7 +192,7 @@ function ReviewCardCustomizer({
                 >
                   <input
                     checked={selectedCards.has(card.id)}
-                    className="mt-0.5 h-3.5 w-3.5"
+                    className="mt-0.5 h-3.5 w-3.5 accent-cyan-600"
                     disabled={!card.implemented}
                     onChange={(event) =>
                       updateCard(card.id, event.target.checked)
@@ -304,7 +307,7 @@ function ReviewScoreCard({
   readonly note?: string | undefined;
 }) {
   return (
-    <div className="rounded-md border bg-background/60 p-2.5">
+    <div className="rounded-md border border-cyan-100 bg-white/85 p-2.5 shadow-sm shadow-cyan-900/5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold">
           <Ruler className="h-3.5 w-3.5 text-primary" />
@@ -325,7 +328,7 @@ function ReviewScoreCard({
         {evidence.slice(0, 4).map((item, index) => (
           <span
             key={`${item}-${index}`}
-            className="rounded-md border bg-card px-1.5 py-0.5"
+            className="rounded-md border border-cyan-100 bg-cyan-50 px-1.5 py-0.5"
           >
             {item}
           </span>
@@ -347,7 +350,7 @@ function MeasurementGrid({
   ) => void;
 }) {
   return (
-    <div className="mt-2 rounded-md border bg-background/60 p-2.5">
+    <div className="mt-2 rounded-md border border-cyan-100 bg-white/85 p-2.5 shadow-sm shadow-cyan-900/5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold">
           <Ruler className="h-3.5 w-3.5 text-primary" />
@@ -362,10 +365,10 @@ function MeasurementGrid({
         {measurements.map((measurement) => (
           <button
             key={measurement.code}
-            className={`rounded-md border bg-card px-2 py-1.5 text-left transition ${
+            className={`rounded-md border bg-white px-2 py-1.5 text-left shadow-sm shadow-cyan-900/5 transition focus:outline-none focus:ring-2 focus:ring-cyan-200 ${
               selectedMeasurementCode === measurement.code
-                ? "border-primary bg-secondary/70 ring-1 ring-primary/30"
-                : "hover:border-primary/40"
+                ? "border-cyan-500 bg-cyan-100 ring-1 ring-cyan-300"
+                : "border-cyan-200 hover:border-cyan-500 hover:bg-cyan-50"
             } ${measurement.status === "estimated" ? "" : "cursor-not-allowed opacity-70"}`}
             disabled={measurement.status !== "estimated"}
             onClick={() =>
@@ -417,7 +420,7 @@ function FeatureCard({
   );
 
   return (
-    <div className="rounded-md border bg-background/60 p-2.5">
+    <div className="rounded-md border border-cyan-100 bg-white/85 p-2.5 shadow-sm shadow-cyan-900/5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold">
           <Ruler className="h-3.5 w-3.5 text-primary" />
@@ -449,7 +452,7 @@ function FeatureCard({
         {evidence.slice(0, 5).map((item, index) => (
           <span
             key={`${item}-${index}`}
-            className="rounded-md border bg-card px-1.5 py-0.5"
+            className="rounded-md border border-cyan-100 bg-cyan-50 px-1.5 py-0.5"
           >
             {item}
           </span>
