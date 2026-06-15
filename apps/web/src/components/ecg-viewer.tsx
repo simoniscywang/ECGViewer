@@ -11,28 +11,24 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  filterLandmarksForMeasurement,
+  landmarkCode,
+} from "@/components/review-support/landmarks";
+import {
+  defaultReviewSupportCardIds,
+  type ReviewSupportCardId,
+} from "@/components/review-support/review-support-catalog";
+import { ReviewSupportPanel } from "@/components/review-support/review-support-panel";
+import {
   analyzeReviewSupport,
   downsampleMinMax,
   summarizeEcg,
-  type EcgLead,
   type EcgLandmark,
-  type EcgMeasurement,
   type EcgMeasurementCode,
-  type EcgReviewLevel,
-  type EcgReviewSupport,
   type EcgRecord,
-  type ReviewSupportFeature,
-  type ReviewSupportStatus,
   type RPeakMarker,
 } from "@ecgviewer/ecg";
-import {
-  Activity,
-  AlertTriangle,
-  FileText,
-  ListChecks,
-  Ruler,
-  UserRound,
-} from "lucide-react";
+import { Activity, AlertTriangle, FileText, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 interface SerializedLead {
@@ -144,6 +140,9 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
   const [selectedReviewLeadName, setSelectedReviewLeadName] = useState("");
   const [selectedMeasurementCode, setSelectedMeasurementCode] =
     useState<EcgMeasurementCode | null>(null);
+  const [selectedReviewCardIds, setSelectedReviewCardIds] = useState<
+    readonly ReviewSupportCardId[]
+  >(defaultReviewSupportCardIds);
   const summary = useMemo(() => summarizeEcg(data.record), [data.record]);
   const reviewSupport = useMemo(
     () =>
@@ -179,8 +178,10 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
       <ReviewSupportPanel
         leads={data.record.leads}
         reviewSupport={reviewSupport}
+        selectedCardIds={selectedReviewCardIds}
         selectedMeasurementCode={selectedMeasurementCode}
         selectedLeadName={reviewSupport.primaryLeadName ?? ""}
+        onSelectedCardIdsChange={setSelectedReviewCardIds}
         onSelectedMeasurementCodeChange={setSelectedMeasurementCode}
         onSelectedLeadNameChange={setSelectedReviewLeadName}
       />
@@ -233,254 +234,6 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
           </div>
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function ReviewSupportPanel({
-  leads,
-  reviewSupport,
-  selectedMeasurementCode,
-  selectedLeadName,
-  onSelectedMeasurementCodeChange,
-  onSelectedLeadNameChange,
-}: {
-  readonly leads: readonly EcgLead[];
-  readonly reviewSupport: EcgReviewSupport;
-  readonly selectedMeasurementCode: EcgMeasurementCode | null;
-  readonly selectedLeadName: string;
-  readonly onSelectedMeasurementCodeChange: (
-    code: EcgMeasurementCode | null,
-  ) => void;
-  readonly onSelectedLeadNameChange: (leadName: string) => void;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-col gap-2 p-3 pb-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <ListChecks className="h-4 w-4 text-primary" />
-            Review support
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Estimated support values for clinical review; candidate features
-            stay non-diagnostic.
-          </CardDescription>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge className="px-1.5 py-0 text-[11px]">for review</Badge>
-          <Badge className="px-1.5 py-0 text-[11px]">
-            primary {reviewSupport.primaryLeadName ?? "unknown"}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="p-3 pt-0">
-        <div className="mb-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-          <label
-            className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-            htmlFor="review-lead"
-          >
-            Analysis lead
-          </label>
-          <select
-            className="h-7 rounded-md border bg-card px-2 text-xs font-medium text-foreground shadow-sm"
-            id="review-lead"
-            onChange={(event) => onSelectedLeadNameChange(event.target.value)}
-            value={selectedLeadName}
-          >
-            {leads.map((lead) => (
-              <option key={lead.name} value={lead.name}>
-                {lead.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <QualityConfidenceGrid reviewSupport={reviewSupport} />
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {reviewSupport.features.map((feature) => (
-            <ReviewFeatureItem key={feature.title} feature={feature} />
-          ))}
-        </div>
-        <MeasurementGrid
-          measurements={reviewSupport.measurements}
-          selectedMeasurementCode={selectedMeasurementCode}
-          onSelectedMeasurementCodeChange={onSelectedMeasurementCodeChange}
-        />
-        <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-          {reviewSupport.limitations.map((limitation) => (
-            <span
-              key={limitation}
-              className="rounded-md border bg-card px-2 py-1"
-            >
-              {limitation}
-            </span>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function QualityConfidenceGrid({
-  reviewSupport,
-}: {
-  readonly reviewSupport: EcgReviewSupport;
-}) {
-  const confidenceItems = reviewSupport.landmarkConfidence.items;
-  const lowConfidenceItems = confidenceItems.filter(
-    (item) => item.level !== "good",
-  );
-  const confidenceEvidence =
-    confidenceItems.length === 0
-      ? reviewSupport.landmarkConfidence.evidence
-      : lowConfidenceItems.length > 0
-        ? lowConfidenceItems
-            .slice(0, 3)
-            .map((item) => `${item.label} ${item.score}%`)
-        : [`${confidenceItems.length} landmarks estimated`];
-
-  return (
-    <div className="mb-2 grid gap-2 md:grid-cols-2">
-      <ReviewScoreCard
-        title="Signal quality"
-        score={reviewSupport.signalQuality.score}
-        level={reviewSupport.signalQuality.level}
-        value={
-          reviewSupport.signalQuality.leadName
-            ? `Lead ${reviewSupport.signalQuality.leadName}`
-            : "No lead"
-        }
-        evidence={
-          reviewSupport.signalQuality.issues.length > 0
-            ? reviewSupport.signalQuality.issues
-            : reviewSupport.signalQuality.evidence
-        }
-      />
-      <ReviewScoreCard
-        title="Landmark confidence"
-        score={reviewSupport.landmarkConfidence.score}
-        level={reviewSupport.landmarkConfidence.level}
-        value={`${confidenceItems.length} landmarks`}
-        evidence={confidenceEvidence}
-      />
-    </div>
-  );
-}
-
-function ReviewScoreCard({
-  title,
-  score,
-  level,
-  value,
-  evidence,
-}: {
-  readonly title: string;
-  readonly score: number;
-  readonly level: EcgReviewLevel;
-  readonly value: string;
-  readonly evidence: readonly string[];
-}) {
-  return (
-    <div className="rounded-md border bg-background/60 p-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {title}
-          </div>
-          <div className="mt-1 text-sm font-semibold">{score}%</div>
-        </div>
-        <Badge className={`px-1.5 py-0 text-[10px] ${levelClassName(level)}`}>
-          {levelLabel(level)}
-        </Badge>
-      </div>
-      <div className="mt-1 text-xs font-medium">{value}</div>
-      <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
-        {evidence.slice(0, 4).map((item) => (
-          <span key={item} className="rounded-md border bg-card px-1.5 py-0.5">
-            {item}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MeasurementGrid({
-  measurements,
-  selectedMeasurementCode,
-  onSelectedMeasurementCodeChange,
-}: {
-  readonly measurements: readonly EcgMeasurement[];
-  readonly selectedMeasurementCode: EcgMeasurementCode | null;
-  readonly onSelectedMeasurementCodeChange: (
-    code: EcgMeasurementCode | null,
-  ) => void;
-}) {
-  return (
-    <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-      {measurements.map((measurement) => (
-        <button
-          key={measurement.code}
-          className={`rounded-md border bg-card px-2 py-1.5 text-left transition ${
-            selectedMeasurementCode === measurement.code
-              ? "border-primary bg-secondary/70 ring-1 ring-primary/30"
-              : "hover:border-primary/40"
-          } ${measurement.status === "estimated" ? "" : "cursor-not-allowed opacity-70"}`}
-          disabled={measurement.status !== "estimated"}
-          onClick={() =>
-            onSelectedMeasurementCodeChange(
-              selectedMeasurementCode === measurement.code
-                ? null
-                : measurement.code,
-            )
-          }
-          type="button"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-semibold">
-              {measurement.label}
-            </span>
-            <Badge
-              className={`px-1.5 py-0 text-[10px] ${measurement.status === "estimated" ? "border-primary/30 text-primary" : "border-destructive/40 text-destructive"}`}
-            >
-              {measurement.status}
-            </Badge>
-          </div>
-          <div className="mt-1 text-xs font-medium">{measurement.value}</div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-            {measurement.evidence.join(" · ")}
-          </div>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ReviewFeatureItem({
-  feature,
-}: {
-  readonly feature: ReviewSupportFeature;
-}) {
-  return (
-    <div className="rounded-md border bg-background/60 p-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold">
-          <Ruler className="h-3.5 w-3.5 text-primary" />
-          {feature.title}
-        </div>
-        <Badge
-          className={`px-1.5 py-0 text-[10px] ${statusClassName(feature.status)}`}
-        >
-          {statusLabel(feature.status)}
-        </Badge>
-      </div>
-      <div className="mt-1.5 text-xs font-medium">{feature.value}</div>
-      <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-        {feature.description}
-      </p>
-      <div className="mt-1.5 truncate text-[11px] text-muted-foreground">
-        {feature.evidence.join(" · ")}
-      </div>
     </div>
   );
 }
@@ -815,59 +568,4 @@ function formatDateTime(value: string | undefined): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function statusLabel(status: ReviewSupportStatus): string {
-  if (status === "ready") return "ready";
-  if (status === "for-review") return "review";
-  return "limited";
-}
-
-function statusClassName(status: ReviewSupportStatus): string {
-  if (status === "ready") return "border-primary/30 text-primary";
-  if (status === "for-review") return "border-amber-500/40 text-amber-700";
-  return "border-destructive/40 text-destructive";
-}
-
-function levelLabel(level: EcgReviewLevel): string {
-  if (level === "good") return "good";
-  if (level === "review") return "review";
-  return "limited";
-}
-
-function levelClassName(level: EcgReviewLevel): string {
-  if (level === "good") return "border-emerald-500/40 text-emerald-700";
-  if (level === "review") return "border-amber-500/40 text-amber-700";
-  return "border-destructive/40 text-destructive";
-}
-
-function filterLandmarksForMeasurement(
-  landmarks: readonly EcgLandmark[],
-  measurementCode: EcgMeasurementCode | null,
-): readonly EcgLandmark[] {
-  if (!measurementCode) return [];
-  const landmarkKindsByMeasurement: Record<
-    EcgMeasurementCode,
-    readonly EcgLandmark["kind"][]
-  > = {
-    pr: ["p-onset", "qrs-onset"],
-    qrs: ["qrs-onset", "r-peak", "qrs-offset"],
-    qt: ["qrs-onset", "r-peak", "t-end"],
-    qtc: ["qrs-onset", "r-peak", "t-end"],
-    "st-deviation": ["qrs-offset", "st-point"],
-  };
-  const visibleKinds = landmarkKindsByMeasurement[measurementCode];
-  return landmarks.filter((landmark) => visibleKinds.includes(landmark.kind));
-}
-
-function landmarkCode(kind: EcgLandmark["kind"]): string {
-  const codes: Record<EcgLandmark["kind"], string> = {
-    "p-onset": "P",
-    "qrs-onset": "S",
-    "r-peak": "R",
-    "qrs-offset": "E",
-    "st-point": "ST",
-    "t-end": "T",
-  };
-  return codes[kind];
 }
