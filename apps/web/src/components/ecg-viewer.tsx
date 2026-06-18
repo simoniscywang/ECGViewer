@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -16,9 +17,15 @@ import {
 } from "@/components/review-support/landmarks";
 import {
   defaultReviewSupportCardIds,
+  reviewSupportCardGroups,
   type ReviewSupportCardId,
 } from "@/components/review-support/review-support-catalog";
 import { ReviewSupportPanel } from "@/components/review-support/review-support-panel";
+import type {
+  EcgReportRequest,
+  ReportImage,
+  ReportSection,
+} from "@/lib/ecg-report";
 import {
   analyzeReviewSupport,
   downsampleMinMax,
@@ -28,7 +35,17 @@ import {
   type EcgRecord,
   type RPeakMarker,
 } from "@ecgviewer/ecg";
-import { Activity, AlertTriangle, FileText, UserRound } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FileText,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+  UserRound,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 interface SerializedLead {
@@ -84,6 +101,32 @@ type LoadState =
   | { readonly status: "idle" | "loading" }
   | { readonly status: "error"; readonly message: string }
   | { readonly status: "ready"; readonly data: HydratedViewerResponse };
+
+type ReportState =
+  | { readonly status: "idle" }
+  | { readonly status: "creating" }
+  | { readonly status: "error"; readonly message: string }
+  | {
+      readonly status: "ready";
+      readonly reportId: string;
+      readonly viewUrl: string;
+      readonly downloadUrl: string;
+    };
+
+interface ReportCreatedResponse {
+  readonly reportId: string;
+  readonly viewUrl: string;
+  readonly downloadUrl: string;
+}
+
+type AiInterpretationState =
+  | { readonly status: "idle" }
+  | { readonly status: "creating" }
+  | { readonly status: "error"; readonly message: string };
+
+interface AiInterpretationResponse {
+  readonly interpretation: string;
+}
 
 export function EcgViewer({ patientId, observationId }: EcgViewerProps) {
   const [state, setState] = useState<LoadState>({ status: "idle" });
@@ -143,6 +186,13 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
   const [selectedReviewCardIds, setSelectedReviewCardIds] = useState<
     readonly ReviewSupportCardId[]
   >(defaultReviewSupportCardIds);
+  const [physicianInterpretation, setPhysicianInterpretation] = useState("");
+  const [reportState, setReportState] = useState<ReportState>({
+    status: "idle",
+  });
+  const [aiState, setAiState] = useState<AiInterpretationState>({
+    status: "idle",
+  });
   const summary = useMemo(() => summarizeEcg(data.record), [data.record]);
   const reviewSupport = useMemo(
     () =>
@@ -151,6 +201,74 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
       }),
     [data.record, selectedReviewLeadName],
   );
+  const generateReport = async () => {
+    setReportState({ status: "creating" });
+    try {
+      const graphImages = await collectGraphImages();
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          buildReportPayload({
+            data,
+            graphImages,
+            physicianInterpretation,
+            summary,
+            reviewSupport,
+          }),
+        ),
+      });
+      if (!response.ok) {
+        throw new Error(`Report generation failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as ReportCreatedResponse;
+      setReportState({
+        status: "ready",
+        reportId: payload.reportId,
+        viewUrl: payload.viewUrl,
+        downloadUrl: payload.downloadUrl,
+      });
+    } catch {
+      setReportState({
+        status: "error",
+        message: "ECG 分析報告產製失敗，請稍後再試。",
+      });
+    }
+  };
+  const generateAiInterpretation = async () => {
+    setAiState({ status: "creating" });
+    try {
+      const graphImages = await collectGraphImages();
+      const reportPayload = buildReportPayload({
+        data,
+        graphImages,
+        physicianInterpretation,
+        summary,
+        reviewSupport,
+      });
+      const response = await fetch("/api/reports/ai-interpretation", {
+        body: JSON.stringify({
+          graph: reportPayload.graph,
+          graphImages: reportPayload.graphImages,
+          metrics: reportPayload.metrics,
+          reviewSupport: reportPayload.reviewSupport,
+        }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(`AI interpretation failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as AiInterpretationResponse;
+      setPhysicianInterpretation(payload.interpretation);
+      setAiState({ status: "idle" });
+    } catch {
+      setAiState({
+        status: "error",
+        message: "AI 輔助判讀產生失敗，請稍後再試。",
+      });
+    }
+  };
 
   return (
     <div className="space-y-2.5">
@@ -234,9 +352,470 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
           </div>
         </CardContent>
       </Card>
+
+      <ReportComposerCard
+        interpretation={physicianInterpretation}
+        isCreating={reportState.status === "creating"}
+        isGeneratingAi={aiState.status === "creating"}
+        aiError={aiState.status === "error" ? aiState.message : ""}
+        reportError={reportState.status === "error" ? reportState.message : ""}
+        onGenerateAiInterpretation={generateAiInterpretation}
+        onGenerateReport={generateReport}
+        onInterpretationChange={setPhysicianInterpretation}
+      />
+
+      {reportState.status === "ready" ? (
+        <ReportPreviewDialog
+          downloadUrl={reportState.downloadUrl}
+          reportId={reportState.reportId}
+          viewUrl={reportState.viewUrl}
+          onClose={() => setReportState({ status: "idle" })}
+        />
+      ) : null}
     </div>
   );
 }
+
+function ReportComposerCard({
+  interpretation,
+  isCreating,
+  isGeneratingAi,
+  aiError,
+  reportError,
+  onGenerateAiInterpretation,
+  onGenerateReport,
+  onInterpretationChange,
+}: {
+  readonly interpretation: string;
+  readonly isCreating: boolean;
+  readonly isGeneratingAi: boolean;
+  readonly aiError: string;
+  readonly reportError: string;
+  readonly onGenerateAiInterpretation: () => void;
+  readonly onGenerateReport: () => void;
+  readonly onInterpretationChange: (value: string) => void;
+}) {
+  return (
+    <Card className="border-blue-100 bg-card/95 shadow-sm shadow-slate-900/5">
+      <CardHeader className="flex flex-col gap-2 p-2.5 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <FileText className="h-4 w-4 text-primary" />
+            ECG 判讀與報告
+          </CardTitle>
+          <CardDescription className="text-xs">
+            請輸入醫師判讀說明；報告會彙整目前卡片資料與非診斷性量測摘要。
+          </CardDescription>
+        </div>
+        <Badge className="px-1.5 py-0 text-[11px]">PDF report</Badge>
+      </CardHeader>
+      <CardContent className="p-2.5 pt-0">
+        <label
+          className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+          htmlFor="physician-interpretation"
+        >
+          醫師判讀說明
+        </label>
+        <textarea
+          className="mt-1 min-h-32 w-full resize-y rounded-md border border-blue-100 bg-white px-3 py-2 text-sm shadow-sm shadow-slate-900/5 outline-none transition placeholder:text-muted-foreground focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+          id="physician-interpretation"
+          maxLength={4000}
+          onChange={(event) => onInterpretationChange(event.target.value)}
+          placeholder="請輸入 ECG 判讀說明，例如節律、心率、傳導、ST-T 變化與臨床建議。"
+          value={interpretation}
+        />
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[11px] text-muted-foreground">
+            {interpretation.length.toLocaleString()} / 4,000 characters
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              disabled={isCreating || isGeneratingAi}
+              onClick={onGenerateAiInterpretation}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {isGeneratingAi ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              AI輔助判讀
+            </Button>
+            <Button
+              disabled={isCreating || isGeneratingAi}
+              onClick={onGenerateReport}
+              size="sm"
+              type="button"
+            >
+              {isCreating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4" />
+              )}
+              報告產製
+            </Button>
+          </div>
+        </div>
+        {aiError ? (
+          <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+            {aiError}
+          </p>
+        ) : null}
+        {reportError ? (
+          <p className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
+            {reportError}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportPreviewDialog({
+  reportId,
+  viewUrl,
+  downloadUrl,
+  onClose,
+}: {
+  readonly reportId: string;
+  readonly viewUrl: string;
+  readonly downloadUrl: string;
+  readonly onClose: () => void;
+}) {
+  return (
+    <div
+      aria-labelledby="ecg-report-dialog-title"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-2 sm:p-4"
+      role="dialog"
+    >
+      <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-blue-100 bg-white shadow-xl">
+        <div className="border-b bg-gradient-to-r from-blue-50 to-white px-3 py-3 sm:px-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className="border-emerald-500/30 bg-emerald-50 px-1.5 py-0 text-[11px] text-emerald-700">
+                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                  已產製
+                </Badge>
+                <Badge className="px-1.5 py-0 text-[11px]">PDF report</Badge>
+              </div>
+              <h2
+                className="flex items-center gap-2 text-base font-semibold text-blue-950"
+                id="ecg-report-dialog-title"
+              >
+                <FileText className="h-4 w-4 text-primary" />
+                ECG 分析報告預覽
+              </h2>
+              <p className="text-xs leading-5 text-muted-foreground">
+                報告已儲存到系統中，可在下方預覽；若瀏覽器未顯示 PDF，請使用下載按鈕開啟檔案。
+              </p>
+              <p className="break-all rounded-md border border-blue-100 bg-white px-2 py-1 text-[11px] text-muted-foreground">
+                Report id: <span className="font-medium text-foreground">{reportId}</span>
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:pt-6">
+              <a
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                href={downloadUrl}
+              >
+                <Download className="h-4 w-4" />
+                下載
+              </a>
+              <Button
+                className="h-9"
+                onClick={onClose}
+                type="button"
+                variant="outline"
+              >
+                <RotateCcw className="h-4 w-4" />
+                返回
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 bg-slate-100 p-2 sm:p-3">
+          <iframe
+            className="h-full w-full rounded-md border border-slate-200 bg-white shadow-inner"
+            src={viewUrl}
+            title="ECG analysis report PDF preview"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildReportPayload({
+  data,
+  graphImages,
+  physicianInterpretation,
+  summary,
+  reviewSupport,
+}: {
+  readonly data: HydratedViewerResponse;
+  readonly graphImages: readonly ReportImage[];
+  readonly physicianInterpretation: string;
+  readonly summary: ReturnType<typeof summarizeEcg>;
+  readonly reviewSupport: ReturnType<typeof analyzeReviewSupport>;
+}): EcgReportRequest {
+  const implementedCards = new Set(implementedReviewSupportCardIds);
+  const selectedFeatures = reviewSupport.features.filter((feature) => {
+    if (feature.code === "signal-quality") {
+      return implementedCards.has("signal-quality");
+    }
+    if (feature.code === "rate-rr" || feature.code === "beat-review") {
+      return implementedCards.has("rate-rr");
+    }
+    if (feature.code === "st-qt") {
+      return implementedCards.has("st-qt");
+    }
+    return false;
+  });
+  const reviewSections: ReportSection[] = [];
+
+  if (implementedCards.has("signal-quality")) {
+    reviewSections.push({
+      title: "Signal Quality",
+      fields: [
+        {
+          label: "Primary lead",
+          value: reviewSupport.primaryLeadName ?? "Unknown",
+        },
+        {
+          label: "Quality",
+          value: `${reviewSupport.signalQuality.score}% ${reviewSupport.signalQuality.level}`,
+        },
+      ],
+      lines: [
+        ...reviewSupport.signalQuality.evidence,
+        ...reviewSupport.signalQuality.issues,
+      ],
+    });
+  }
+
+  if (selectedFeatures.length > 0) {
+    reviewSections.push({
+      title: "Review Support Features",
+      fields: selectedFeatures.map((feature) => ({
+        label: feature.title,
+        value: `${feature.value} (${feature.status})`,
+      })),
+      lines: selectedFeatures.flatMap((feature) => feature.evidence),
+    });
+  }
+
+  if (implementedCards.has("clinical-measurements")) {
+    reviewSections.push({
+      title: "Clinical Measurements",
+      fields: reviewSupport.measurements.map((measurement) => ({
+        label: measurement.label,
+        value: `${measurement.value} (${measurement.status})`,
+      })),
+      lines: reviewSupport.measurements.flatMap(
+        (measurement) => measurement.evidence,
+      ),
+    });
+  }
+
+  if (reviewSupport.limitations.length > 0) {
+    reviewSections.push({
+      title: "Limitations",
+      lines: reviewSupport.limitations,
+    });
+  }
+
+  return {
+    patient: [
+      { label: "Name", value: data.patient.name },
+      { label: "Patient id", value: data.patient.id },
+      { label: "Gender", value: data.patient.gender ?? "Unknown" },
+      { label: "Birth date", value: data.patient.birthDate ?? "Unknown" },
+      {
+        label: "Identifiers",
+        value:
+          data.patient.identifiers.length > 0
+            ? data.patient.identifiers.join(", ")
+            : "None",
+      },
+    ],
+    observation: [
+      { label: "Observation id", value: data.observation.id },
+      { label: "Status", value: data.observation.status ?? "Unknown" },
+      { label: "Code", value: data.observation.code },
+      {
+        label: "Category",
+        value:
+          data.observation.category.length > 0
+            ? data.observation.category.join(", ")
+            : "Unknown",
+      },
+      {
+        label: "Effective time",
+        value: formatDateTime(data.observation.effectiveDateTime),
+      },
+      { label: "Issued", value: formatDateTime(data.observation.issued) },
+      {
+        label: "Subject",
+        value: data.observation.subjectReference ?? "Unknown",
+      },
+    ],
+    metrics: [
+      {
+        label: "Duration",
+        value: `${summary.durationSeconds.toFixed(2)} s`,
+      },
+      {
+        label: "Sampling",
+        value: `${data.record.samplingFrequencyHz.toFixed(1)} Hz`,
+      },
+      { label: "Leads", value: String(summary.leadCount) },
+      {
+        label: "Amplitude",
+        value: `${summary.minAmplitude.toFixed(3)} to ${summary.maxAmplitude.toFixed(3)} ${data.record.unit}`,
+      },
+      {
+        label: "Mean amplitude",
+        value: `${summary.meanAmplitude.toFixed(3)} ${data.record.unit}`,
+      },
+    ],
+    reviewSupport: reviewSections,
+    graph: [
+      { label: "Unit", value: data.record.unit },
+      {
+        label: "Samples per lead",
+        value: summary.sampleCountPerLead.toLocaleString(),
+      },
+      {
+        label: "Displayed leads",
+        value: data.record.leads.map((lead) => lead.name).join(", "),
+      },
+      {
+        label: "Primary review lead",
+        value: reviewSupport.primaryLeadName ?? "Unknown",
+      },
+    ],
+    graphImages,
+    physicianInterpretation,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+async function collectGraphImages(): Promise<ReportImage[]> {
+  const figures = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-ecg-lead-graph]"),
+  ).slice(0, 16);
+  const images: ReportImage[] = [];
+
+  for (const figure of figures) {
+    const svg = figure.querySelector("svg");
+    if (!svg) continue;
+    const label = figure.dataset.ecgLeadGraph ?? "ECG lead";
+    const image = await svgToJpeg(svg);
+    if (image) {
+      images.push({
+        label: `Lead ${label}`,
+        ...image,
+      });
+    }
+  }
+
+  return images;
+}
+
+async function svgToJpeg(
+  svg: SVGSVGElement,
+): Promise<
+  | {
+      readonly dataUrl: string;
+      readonly width: number;
+      readonly height: number;
+    }
+  | undefined
+> {
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  const viewBox = clone.viewBox.baseVal;
+  const width = viewBox.width || 960;
+  const height = viewBox.height || 96;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+
+  const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.textContent = `
+    .ecg-path { fill: none; stroke: #c62828; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.4; }
+    .ecg-baseline { stroke: #65758b; stroke-dasharray: 4 6; stroke-width: 1; }
+    .ecg-rpeak-line { stroke: #1f5fa8; stroke-dasharray: 3 6; stroke-opacity: 0.35; stroke-width: 0.8; }
+    .ecg-rpeak-marker { fill: #1f5fa8; stroke: #ffffff; stroke-width: 1.2; }
+    .ecg-landmark-line { stroke: #2563eb; stroke-dasharray: 2 4; stroke-opacity: 0.9; stroke-width: 1.4; }
+    .ecg-landmark-marker { fill: #2563eb; stroke: #ffffff; stroke-width: 1.4; }
+    .ecg-landmark-code { fill: #1d4ed8; font-size: 9px; font-weight: 700; paint-order: stroke; stroke: #ffffff; stroke-linejoin: round; stroke-width: 3px; }
+    .ecg-landmark-r-peak { stroke: #7c3aed; fill: #7c3aed; }
+  `;
+
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  defs.innerHTML = `
+    <pattern id="minorGrid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <path d="M 16 0 L 0 0 0 16" fill="none" stroke="#e5ebf2" stroke-width="1"/>
+    </pattern>
+  `;
+  const background = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "rect",
+  );
+  background.setAttribute("x", "0");
+  background.setAttribute("y", "0");
+  background.setAttribute("width", String(width));
+  background.setAttribute("height", String(height));
+  background.setAttribute("fill", "#ffffff");
+  const grid = background.cloneNode(false) as SVGRectElement;
+  grid.setAttribute("fill", "url(#minorGrid)");
+
+  clone.insertBefore(style, clone.firstChild);
+  clone.insertBefore(defs, style.nextSibling);
+  clone.insertBefore(background, defs.nextSibling);
+  clone.insertBefore(grid, background.nextSibling);
+
+  const serialized = new XMLSerializer().serializeToString(clone);
+  const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    const loaded = new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Unable to render ECG SVG."));
+    });
+    image.src = url;
+    await loaded;
+
+    const scale = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const context = canvas.getContext("2d");
+    if (!context) return undefined;
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return {
+      dataUrl: canvas.toDataURL("image/jpeg", 0.92),
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+const implementedReviewSupportCardIds: readonly ReviewSupportCardId[] =
+  reviewSupportCardGroups
+    .flatMap((group) => group.cards)
+    .filter((card) => card.implemented)
+    .map((card) => card.id);
 
 function PatientPanel({ patient }: { readonly patient: PatientSummary }) {
   return (
@@ -401,7 +980,10 @@ function LeadWaveform({
   }, []);
 
   return (
-    <figure className="rounded-md border border-blue-100 bg-white/95 p-2 shadow-sm shadow-slate-900/5">
+    <figure
+      className="rounded-md border border-blue-100 bg-white/95 p-2 shadow-sm shadow-slate-900/5"
+      data-ecg-lead-graph={name}
+    >
       <figcaption className="mb-1 flex items-center justify-between gap-3">
         <span className="text-xs font-semibold">{name}</span>
         <span className="text-[11px] text-muted-foreground">
