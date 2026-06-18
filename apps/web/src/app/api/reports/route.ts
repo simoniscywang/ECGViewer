@@ -4,6 +4,10 @@ import {
   parseEcgReportRequest,
 } from "@/lib/ecg-report";
 import { reportDirectory } from "@/lib/report-storage";
+import {
+  ServerConfigValueError,
+  shouldInlineReportPdf,
+} from "@ecgviewer/config";
 import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import { NextRequest, NextResponse } from "next/server";
@@ -11,10 +15,14 @@ import path from "path";
 
 const maxReportPayloadBytes = 8_000_000;
 
+export const runtime = "nodejs";
+
 interface ReportCreatedResponse {
   readonly reportId: string;
   readonly viewUrl: string;
   readonly downloadUrl: string;
+  readonly pdfBase64?: string;
+  readonly pdfFilename?: string;
 }
 
 interface ApiErrorBody {
@@ -34,12 +42,34 @@ export async function POST(
     );
   }
 
+  let reportRequest: ReturnType<typeof parseEcgReportRequest>;
   try {
     const body: unknown = await request.json();
-    const reportRequest = parseEcgReportRequest(body);
+    reportRequest = parseEcgReportRequest(body);
+  } catch {
+    return errorResponse(
+      "INVALID_REPORT_REQUEST",
+      "ECG 報告內容格式不正確，無法產製 PDF。",
+      400,
+    );
+  }
+
+  try {
     const report = buildEcgReportDocument(reportRequest);
     const pdf = createEcgReportPdf(report);
     const reportId = randomUUID();
+    const pdfFilename = `ecg-report-${reportId}.pdf`;
+
+    if (shouldInlineReportPdf(process.env)) {
+      return NextResponse.json({
+        reportId,
+        viewUrl: `/api/reports/${reportId}`,
+        downloadUrl: `/api/reports/${reportId}?download=1`,
+        pdfBase64: Buffer.from(pdf).toString("base64"),
+        pdfFilename,
+      });
+    }
+
     const directory = reportDirectory();
     const filePath = path.join(directory, `${reportId}.pdf`);
 
@@ -51,11 +81,22 @@ export async function POST(
       viewUrl: `/api/reports/${reportId}`,
       downloadUrl: `/api/reports/${reportId}?download=1`,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ServerConfigValueError) {
+      return errorResponse(
+        "REPORT_STORAGE_CONFIG_INVALID",
+        "ECG 報告儲存設定不正確，請聯絡系統管理員。",
+        500,
+      );
+    }
+
+    console.error("ECG report generation failed", {
+      code: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+    });
     return errorResponse(
-      "INVALID_REPORT_REQUEST",
-      "ECG 報告內容格式不正確，無法產製 PDF。",
-      400,
+      "REPORT_GENERATION_FAILED",
+      "ECG 報告產製暫時失敗，請稍後再試。",
+      500,
     );
   }
 }

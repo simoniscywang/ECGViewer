@@ -111,12 +111,16 @@ type ReportState =
       readonly reportId: string;
       readonly viewUrl: string;
       readonly downloadUrl: string;
+      readonly objectUrl?: string;
+      readonly downloadFilename?: string;
     };
 
 interface ReportCreatedResponse {
   readonly reportId: string;
   readonly viewUrl: string;
   readonly downloadUrl: string;
+  readonly pdfBase64?: string;
+  readonly pdfFilename?: string;
 }
 
 type AiInterpretationState =
@@ -193,6 +197,10 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
   const [aiState, setAiState] = useState<AiInterpretationState>({
     status: "idle",
   });
+  useEffect(() => {
+    if (reportState.status !== "ready" || !reportState.objectUrl) return;
+    return () => URL.revokeObjectURL(reportState.objectUrl ?? "");
+  }, [reportState]);
   const summary = useMemo(() => summarizeEcg(data.record), [data.record]);
   const reviewSupport = useMemo(
     () =>
@@ -222,11 +230,18 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
         throw new Error(`Report generation failed: ${response.status}`);
       }
       const payload = (await response.json()) as ReportCreatedResponse;
+      const inlinePdf = createInlineReportUrls(payload);
       setReportState({
         status: "ready",
         reportId: payload.reportId,
-        viewUrl: payload.viewUrl,
-        downloadUrl: payload.downloadUrl,
+        viewUrl: inlinePdf?.url ?? payload.viewUrl,
+        downloadUrl: inlinePdf?.url ?? payload.downloadUrl,
+        ...(inlinePdf
+          ? {
+              objectUrl: inlinePdf.url,
+              downloadFilename: inlinePdf.filename,
+            }
+          : {}),
       });
     } catch {
       setReportState({
@@ -369,6 +384,9 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
           downloadUrl={reportState.downloadUrl}
           reportId={reportState.reportId}
           viewUrl={reportState.viewUrl}
+          {...(reportState.downloadFilename
+            ? { downloadFilename: reportState.downloadFilename }
+            : {})}
           onClose={() => setReportState({ status: "idle" })}
         />
       ) : null}
@@ -477,11 +495,13 @@ function ReportPreviewDialog({
   reportId,
   viewUrl,
   downloadUrl,
+  downloadFilename,
   onClose,
 }: {
   readonly reportId: string;
   readonly viewUrl: string;
   readonly downloadUrl: string;
+  readonly downloadFilename?: string;
   readonly onClose: () => void;
 }) {
   return (
@@ -510,15 +530,18 @@ function ReportPreviewDialog({
                 ECG 分析報告預覽
               </h2>
               <p className="text-xs leading-5 text-muted-foreground">
-                報告已儲存到系統中，可在下方預覽；若瀏覽器未顯示 PDF，請使用下載按鈕開啟檔案。
+                報告已儲存到系統中，可在下方預覽；若瀏覽器未顯示
+                PDF，請使用下載按鈕開啟檔案。
               </p>
               <p className="break-all rounded-md border border-blue-100 bg-white px-2 py-1 text-[11px] text-muted-foreground">
-                Report id: <span className="font-medium text-foreground">{reportId}</span>
+                Report id:{" "}
+                <span className="font-medium text-foreground">{reportId}</span>
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:pt-6">
               <a
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                download={downloadFilename}
                 href={downloadUrl}
               >
                 <Download className="h-4 w-4" />
@@ -546,6 +569,21 @@ function ReportPreviewDialog({
       </div>
     </div>
   );
+}
+
+function createInlineReportUrls(
+  payload: ReportCreatedResponse,
+): { readonly url: string; readonly filename: string } | undefined {
+  if (!payload.pdfBase64) return undefined;
+  const binary = atob(payload.pdfBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return {
+    filename: payload.pdfFilename ?? `ecg-report-${payload.reportId}.pdf`,
+    url: URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })),
+  };
 }
 
 function buildReportPayload({
@@ -725,9 +763,7 @@ async function collectGraphImages(): Promise<ReportImage[]> {
   return images;
 }
 
-async function svgToJpeg(
-  svg: SVGSVGElement,
-): Promise<
+async function svgToJpeg(svg: SVGSVGElement): Promise<
   | {
       readonly dataUrl: string;
       readonly width: number;
