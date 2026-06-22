@@ -22,6 +22,7 @@ ECGViewer uses backend service OAuth. It does not use user login, authorization 
 - Do not print client secrets, access tokens, refresh tokens, or full token responses.
 - If refresh tokens are returned, refresh server-side; otherwise request a new client credentials token.
 - Translate token failures into safe route errors.
+- FHIR writeback routes, including report Bundle transactions, must use backend service tokens server-side; browser code may request the app API but must not receive FHIR tokens.
 
 ## Smoke Test
 

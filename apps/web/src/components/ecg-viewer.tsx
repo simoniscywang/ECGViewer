@@ -44,6 +44,7 @@ import {
   Loader2,
   RotateCcw,
   Sparkles,
+  UploadCloud,
   UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -112,8 +113,20 @@ type ReportState =
       readonly viewUrl: string;
       readonly downloadUrl: string;
       readonly objectUrl?: string;
+      readonly pdfBase64?: string;
+      readonly pdfFilename?: string;
       readonly downloadFilename?: string;
     };
+
+type FhirWritebackState =
+  | { readonly status: "idle" }
+  | { readonly status: "writing" }
+  | {
+      readonly status: "ready";
+      readonly diagnosticReportId: string;
+      readonly resultObservationId: string;
+    }
+  | { readonly status: "error"; readonly message: string };
 
 interface ReportCreatedResponse {
   readonly reportId: string;
@@ -130,6 +143,11 @@ type AiInterpretationState =
 
 interface AiInterpretationResponse {
   readonly interpretation: string;
+}
+
+interface FhirWritebackResponse {
+  readonly diagnosticReportId: string;
+  readonly resultObservationId: string;
 }
 
 export function EcgViewer({ patientId, observationId }: EcgViewerProps) {
@@ -178,12 +196,27 @@ export function EcgViewer({ patientId, observationId }: EcgViewerProps) {
   if (state.status === "idle" || state.status === "loading")
     return <ViewerLoading />;
   if (state.status === "error") return <ViewerError message={state.message} />;
-  if (state.status === "ready") return <ReadyViewer data={state.data} />;
+  if (state.status === "ready")
+    return (
+      <ReadyViewer
+        data={state.data}
+        observationId={observationId}
+        patientId={patientId}
+      />
+    );
 
   return null;
 }
 
-function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
+function ReadyViewer({
+  data,
+  patientId,
+  observationId,
+}: {
+  readonly data: HydratedViewerResponse;
+  readonly patientId: string;
+  readonly observationId: string;
+}) {
   const [selectedReviewLeadName, setSelectedReviewLeadName] = useState("");
   const [selectedMeasurementCode, setSelectedMeasurementCode] =
     useState<EcgMeasurementCode | null>(null);
@@ -197,6 +230,10 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
   const [aiState, setAiState] = useState<AiInterpretationState>({
     status: "idle",
   });
+  const [fhirWritebackState, setFhirWritebackState] =
+    useState<FhirWritebackState>({
+      status: "idle",
+    });
   useEffect(() => {
     if (reportState.status !== "ready" || !reportState.objectUrl) return;
     return () => URL.revokeObjectURL(reportState.objectUrl ?? "");
@@ -236,6 +273,8 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
         reportId: payload.reportId,
         viewUrl: inlinePdf?.url ?? payload.viewUrl,
         downloadUrl: inlinePdf?.url ?? payload.downloadUrl,
+        ...(payload.pdfBase64 ? { pdfBase64: payload.pdfBase64 } : {}),
+        ...(payload.pdfFilename ? { pdfFilename: payload.pdfFilename } : {}),
         ...(inlinePdf
           ? {
               objectUrl: inlinePdf.url,
@@ -281,6 +320,46 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
       setAiState({
         status: "error",
         message: "AI 輔助判讀產生失敗，請稍後再試。",
+      });
+    }
+  };
+  const writeReportToFhir = async () => {
+    if (reportState.status !== "ready") return;
+    setFhirWritebackState({ status: "writing" });
+    try {
+      const response = await fetch("/api/reports/fhir", {
+        body: JSON.stringify({
+          patientId,
+          observationId,
+          effectiveDateTime: data.observation.effectiveDateTime,
+          reportId: reportState.reportId,
+          pdfBase64: reportState.pdfBase64,
+          pdfFilename: reportState.pdfFilename ?? reportState.downloadFilename,
+        }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) {
+        const errorBody = (await response.json().catch(() => ({}))) as {
+          readonly message?: string;
+        };
+        throw new Error(
+          errorBody.message ?? `FHIR writeback failed: ${response.status}`,
+        );
+      }
+      const payload = (await response.json()) as FhirWritebackResponse;
+      setFhirWritebackState({
+        status: "ready",
+        diagnosticReportId: payload.diagnosticReportId,
+        resultObservationId: payload.resultObservationId,
+      });
+    } catch (error: unknown) {
+      setFhirWritebackState({
+        status: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "FHIR 報告寫回失敗，請稍後再試。",
       });
     }
   };
@@ -387,7 +466,12 @@ function ReadyViewer({ data }: { readonly data: HydratedViewerResponse }) {
           {...(reportState.downloadFilename
             ? { downloadFilename: reportState.downloadFilename }
             : {})}
-          onClose={() => setReportState({ status: "idle" })}
+          fhirWritebackState={fhirWritebackState}
+          onClose={() => {
+            setReportState({ status: "idle" });
+            setFhirWritebackState({ status: "idle" });
+          }}
+          onWriteBackToFhir={writeReportToFhir}
         />
       ) : null}
     </div>
@@ -496,13 +580,17 @@ function ReportPreviewDialog({
   viewUrl,
   downloadUrl,
   downloadFilename,
+  fhirWritebackState,
   onClose,
+  onWriteBackToFhir,
 }: {
   readonly reportId: string;
   readonly viewUrl: string;
   readonly downloadUrl: string;
   readonly downloadFilename?: string;
+  readonly fhirWritebackState: FhirWritebackState;
   readonly onClose: () => void;
+  readonly onWriteBackToFhir: () => void;
 }) {
   return (
     <div
@@ -539,6 +627,20 @@ function ReportPreviewDialog({
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:pt-6">
+              <Button
+                className="h-9"
+                disabled={fhirWritebackState.status === "writing"}
+                onClick={onWriteBackToFhir}
+                type="button"
+                variant="outline"
+              >
+                {fhirWritebackState.status === "writing" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <UploadCloud className="h-4 w-4" />
+                )}
+                寫回FHIR
+              </Button>
               <a
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                 download={downloadFilename}
@@ -558,6 +660,18 @@ function ReportPreviewDialog({
               </Button>
             </div>
           </div>
+          {fhirWritebackState.status === "ready" ? (
+            <p className="mt-2 rounded-md border border-emerald-500/30 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-800">
+              已寫回 FHIR：DiagnosticReport/
+              {fhirWritebackState.diagnosticReportId}，Observation/
+              {fhirWritebackState.resultObservationId}
+            </p>
+          ) : null}
+          {fhirWritebackState.status === "error" ? (
+            <p className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
+              {fhirWritebackState.message}
+            </p>
+          ) : null}
         </div>
         <div className="min-h-0 flex-1 bg-slate-100 p-2 sm:p-3">
           <iframe

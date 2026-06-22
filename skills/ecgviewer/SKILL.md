@@ -31,5 +31,6 @@ Use this skill first for broad ECGViewer work, then load narrower skills when th
 - Browser code never receives client secrets, refresh tokens, access tokens, or token endpoint responses.
 - FHIR JSON is untrusted until parsed by `packages/fhir`.
 - UI renders normalized ECG records, not raw FHIR resources.
+- FHIR writeback for generated reports stays server-side and uses Bundle transaction resources.
 - ECG analysis wording must remain non-diagnostic.
 - Every meaningful behavior change needs focused tests.

@@ -10,6 +10,7 @@ Use this skill for security design, implementation review, or bug triage.
 ## High-Risk Data
 
 - Patient id, Observation id, timestamps, identifiers, and ECG waveforms are sensitive.
+- Generated report PDFs and their base64 strings are sensitive clinical-adjacent data.
 - FHIR payloads and raw ECG samples must not be logged.
 - OAuth client secrets, access tokens, refresh tokens, and token endpoint responses must remain server-side.
 
@@ -27,6 +28,7 @@ Use this skill for security design, implementation review, or bug triage.
 - Use allowlisted FHIR base URLs in production.
 - Enforce timeouts and response size limits when implemented.
 - Validate `Observation.subject.reference` against the requested Patient id before displaying data.
+- For report writeback, validate derived resource ids, PDF base64 shape, request size, and upstream status without logging the PDF, Bundle body, access token, or full request URL.
 
 ## Review Output
 
